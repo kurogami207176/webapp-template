@@ -1,45 +1,58 @@
+import os
+
+import boto3
 import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from moto import mock_aws
 
-from src.database import Base, get_db
-from src.main import app
-
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
-
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def create_tables():
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+# Set env vars before importing app modules so config validation passes
+os.environ.setdefault("JWT_SECRET", "test-secret-that-is-long-enough-32ch")
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
+os.environ.setdefault("USERS_TABLE_NAME", "webapp-users")
+os.environ.setdefault("SESSIONS_TABLE_NAME", "webapp-sessions")
 
 
-@pytest_asyncio.fixture
-async def db() -> AsyncSession:
-    async with TestSessionLocal() as session:
-        yield session
-        await session.rollback()
-        # Truncate all tables between tests
-        for table in reversed(Base.metadata.sorted_tables):
-            await session.execute(table.delete())
-        await session.commit()
+def create_tables() -> None:
+    ddb = boto3.resource("dynamodb", region_name="us-east-1")
+
+    ddb.create_table(
+        TableName="webapp-users",
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+        AttributeDefinitions=[
+            {"AttributeName": "id", "AttributeType": "S"},
+            {"AttributeName": "email", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": "email-index",
+                "KeySchema": [{"AttributeName": "email", "KeyType": "HASH"}],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+    ddb.create_table(
+        TableName="webapp-sessions",
+        KeySchema=[{"AttributeName": "refresh_token", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "refresh_token", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
 
 
-@pytest_asyncio.fixture
-async def client(db: AsyncSession):
-    async def override_get_db():
-        yield db
+@pytest.fixture
+def aws_mock():
+    """Spin up moto mock DynamoDB tables for a single test."""
+    with mock_aws():
+        create_tables()
+        yield
 
-    app.dependency_overrides[get_db] = override_get_db
+
+@pytest.fixture
+async def client(aws_mock):
+    from src.main import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
-
-    app.dependency_overrides.clear()

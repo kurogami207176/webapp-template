@@ -1,7 +1,6 @@
 [
   { "ParameterKey": "Environment", "ParameterValue": "production" },
   { "ParameterKey": "ImageTag", "ParameterValue": "stable" },
-  { "ParameterKey": "DatabaseUrl", "ParameterValue": "REPLACE_WITH_YOUR_DB_URL" },
   { "ParameterKey": "JwtSecret", "ParameterValue": "REPLACE_WITH_STRONG_SECRET" },
   { "ParameterKey": "Cpu", "ParameterValue": "1024" },
   { "ParameterKey": "Memory", "ParameterValue": "2048" },

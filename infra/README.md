@@ -1,6 +1,6 @@
 # Infrastructure (CloudFormation)
 
-Deploys the API to AWS App Runner backed by an ECR container registry.
+Deploys the API to AWS App Runner backed by ECR and DynamoDB.
 
 ## Prerequisites
 
@@ -10,7 +10,8 @@ Deploys the API to AWS App Runner backed by an ECR container registry.
 ## Architecture
 
 - **ECR**: Container registry for API images
-- **App Runner**: Managed container service — no VPC, load balancer, or cluster to manage
+- **DynamoDB**: Serverless tables for users and sessions (no RDS/VPC needed)
+- **App Runner**: Managed container service — no load balancer or cluster to manage
 
 ## Deploy steps
 
@@ -23,13 +24,32 @@ aws cloudformation deploy \
   --region us-east-1
 ```
 
-### 2. Build and push image
+### 2. Deploy DynamoDB tables (one-time per environment)
+
+```bash
+aws cloudformation deploy \
+  --template-file infra/cloudformation/dynamodb.yml \
+  --stack-name webapp-dynamodb-staging \
+  --parameter-overrides Environment=staging PointInTimeRecovery=false \
+  --region us-east-1
+```
+
+For production, enable point-in-time recovery:
+```bash
+aws cloudformation deploy \
+  --template-file infra/cloudformation/dynamodb.yml \
+  --stack-name webapp-dynamodb-production \
+  --parameter-overrides Environment=production PointInTimeRecovery=true \
+  --region us-east-1
+```
+
+### 3. Build and push image
 
 ```bash
 ./scripts/deploy.sh --env staging --tag $(git rev-parse --short HEAD)
 ```
 
-### 3. Deploy App Runner
+### 4. Deploy App Runner
 
 ```bash
 aws cloudformation deploy \
@@ -42,4 +62,4 @@ aws cloudformation deploy \
 
 ## Updating the deployment
 
-Re-run `deploy.sh` to push a new image, then update the CloudFormation stack with the new image tag.
+Re-run `deploy.sh` — it builds, pushes the new image, and updates the CloudFormation stack in one step.

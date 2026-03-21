@@ -9,10 +9,6 @@ Parameters:
     Type: String
     Description: Docker image tag to deploy
     Default: latest
-  DatabaseUrl:
-    Type: String
-    NoEcho: true
-    Description: PostgreSQL connection string (use AWS Secrets Manager ARN prefix for secret references)
   JwtSecret:
     Type: String
     NoEcho: true
@@ -57,6 +53,26 @@ Resources:
             Principal:
               Service: tasks.apprunner.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !ImportValue !Sub "webapp-users-table-arn-${Environment}"
+                  - !Sub
+                    - "${TableArn}/index/*"
+                    - TableArn: !ImportValue !Sub "webapp-users-table-arn-${Environment}"
+                  - !ImportValue !Sub "webapp-sessions-table-arn-${Environment}"
 
   ApiService:
     Type: AWS::AppRunner::Service
@@ -75,8 +91,10 @@ Resources:
             RuntimeEnvironmentVariables:
               ENVIRONMENT: !Ref Environment
               LOG_LEVEL: !If [IsProduction, "warn", "info"]
-              DATABASE_URL: !Ref DatabaseUrl
               JWT_SECRET: !Ref JwtSecret
+              AWS_REGION: !Ref AWS::Region
+              USERS_TABLE_NAME: !ImportValue !Sub "webapp-users-table-${Environment}"
+              SESSIONS_TABLE_NAME: !ImportValue !Sub "webapp-sessions-table-${Environment}"
               CORS_ORIGINS: !If
                 - IsProduction
                 - "https://your-production-domain.com"

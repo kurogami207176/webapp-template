@@ -1,22 +1,15 @@
-from collections.abc import AsyncGenerator
-
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+import boto3
+from mypy_boto3_dynamodb import DynamoDBServiceResource
 
 from .config import settings
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.environment == "development",
-)
 
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-
-
-class Base(DeclarativeBase):
-    pass
+def get_dynamodb() -> DynamoDBServiceResource:
+    kwargs: dict = {"region_name": settings.aws_region}
+    if settings.dynamodb_endpoint_url:
+        kwargs["endpoint_url"] = settings.dynamodb_endpoint_url
+    return boto3.resource("dynamodb", **kwargs)  # type: ignore[return-value]
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with SessionLocal() as session:
-        yield session
+def get_table(table_name: str):  # type: ignore[return-value]
+    return get_dynamodb().Table(table_name)

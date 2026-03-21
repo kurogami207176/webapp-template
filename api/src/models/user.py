@@ -1,34 +1,59 @@
-import secrets
-from datetime import datetime
-
-from sqlalchemy import DateTime, ForeignKey, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from ..database import Base
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: secrets.token_urlsafe(16))
-    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    sessions: Mapped[list["Session"]] = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-class Session(Base):
-    __tablename__ = "sessions"
+@dataclass
+class User:
+    id: str
+    email: str
+    name: str
+    hashed_password: str
+    created_at: str = field(default_factory=_now)
+    updated_at: str = field(default_factory=_now)
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: secrets.token_urlsafe(16))
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    refresh_token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    def to_item(self) -> dict:
+        return {
+            "id": self.id,
+            "email": self.email,
+            "name": self.name,
+            "hashed_password": self.hashed_password,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
-    user: Mapped["User"] = relationship("User", back_populates="sessions")
+    @classmethod
+    def from_item(cls, item: dict) -> "User":
+        return cls(
+            id=item["id"],
+            email=item["email"],
+            name=item["name"],
+            hashed_password=item["hashed_password"],
+            created_at=item["created_at"],
+            updated_at=item["updated_at"],
+        )
+
+
+@dataclass
+class Session:
+    refresh_token: str
+    user_id: str
+    expires_at: str  # ISO 8601
+
+    def to_item(self) -> dict:
+        return {
+            "refresh_token": self.refresh_token,
+            "user_id": self.user_id,
+            "expires_at": self.expires_at,
+        }
+
+    @classmethod
+    def from_item(cls, item: dict) -> "Session":
+        return cls(
+            refresh_token=item["refresh_token"],
+            user_id=item["user_id"],
+            expires_at=item["expires_at"],
+        )

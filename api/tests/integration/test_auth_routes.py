@@ -56,3 +56,16 @@ async def test_login_wrong_password_returns_401(client):
         json={"email": "test@example.com", "password": "wrongpass"},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_returns_new_tokens(client):
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "test@example.com", "password": "password123", "name": "Test"},
+    )
+    old_refresh = reg.json()["refresh_token"]
+
+    response = await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
+    assert response.status_code == 200
+    assert response.json()["refresh_token"] != old_refresh

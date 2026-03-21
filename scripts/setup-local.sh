@@ -18,7 +18,7 @@ docker info &>/dev/null || error "Docker is not running"
 # Copy .env
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
   cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
-  log "Created .env from .env.example — update values before proceeding"
+  log "Created .env from .env.example — update JWT_SECRET before proceeding"
 fi
 
 # Set up Python venv
@@ -35,23 +35,17 @@ log "Installing Python dependencies..."
 log "Installing Node.js dependencies..."
 cd "$ROOT_DIR/web" && npm install --silent
 
-# Start postgres
-log "Starting database..."
-docker compose -f "$ROOT_DIR/docker/docker-compose.yml" up -d db
+# Start local DynamoDB + create tables
+log "Starting local DynamoDB..."
+docker compose -f "$ROOT_DIR/docker/docker-compose.yml" up -d dynamodb dynamodb-setup
 
-log "Waiting for database..."
-until docker compose -f "$ROOT_DIR/docker/docker-compose.yml" exec db pg_isready -U postgres &>/dev/null; do
+log "Waiting for DynamoDB setup to complete..."
+until docker compose -f "$ROOT_DIR/docker/docker-compose.yml" ps dynamodb-setup | grep -q "exited\|completed"; do
   sleep 1
 done
 
-# Run migrations
-log "Running database migrations..."
-cd "$ROOT_DIR/api"
-source .venv/bin/activate
-alembic upgrade head
-
 log ""
 log "Setup complete!"
-log "  Start services:     docker compose -f docker/docker-compose.yml up"
-log "  Run API tests:      cd api && pytest"
-log "  API docs:           http://localhost:8000/docs"
+log "  Start all services:  docker compose -f docker/docker-compose.yml up"
+log "  Run API tests:       cd api && source .venv/bin/activate && pytest"
+log "  API docs:            http://localhost:8000/docs"

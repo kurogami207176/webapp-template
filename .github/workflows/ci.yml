@@ -15,21 +15,6 @@ jobs:
     name: API — lint, typecheck & test
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: webapp_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
-
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +25,7 @@ jobs:
           cache-dependency-path: api/requirements-dev.txt
 
       - name: Install dependencies
-        run: pip install -r api/requirements-dev.txt
+        run: pip install -r requirements-dev.txt
         working-directory: api
 
       - name: Lint (ruff)
@@ -53,9 +38,11 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: sqlite+aiosqlite:///./test.db
           JWT_SECRET: test-secret-that-is-long-enough-32chars
           CORS_ORIGINS: http://localhost:3000
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
         run: pytest --cov=src --cov-report=xml -v
         working-directory: api
 
@@ -69,7 +56,7 @@ jobs:
         run: docker build -f api/Dockerfile -t webapp-api:ci api/
 
   web:
-    name: Web — typecheck
+    name: Web — typecheck & e2e
     runs-on: ubuntu-latest
 
     steps:
@@ -88,3 +75,34 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
         working-directory: web
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+        working-directory: web
+
+      - name: Start services
+        run: docker compose -f docker/docker-compose.yml up -d db api web
+        env:
+          JWT_SECRET: test-secret-that-is-long-enough-32chars
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/webapp_dev
+
+      - name: Wait for API to be ready
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+
+      - name: Run e2e tests
+        run: npx playwright test
+        working-directory: web
+        env:
+          BASE_URL: http://localhost:3000
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7

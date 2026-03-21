@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DynamoDB tables for webapp user management
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [staging, production]
+  PointInTimeRecovery:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable point-in-time recovery (recommended for production)
+
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "webapp-users-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !Ref PointInTimeRecovery
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "webapp-sessions-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: refresh_token
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: refresh_token
+          AttributeType: S
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+Outputs:
+  UsersTableName:
+    Description: Users DynamoDB table name
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub "webapp-users-table-${Environment}"
+
+  UsersTableArn:
+    Description: Users DynamoDB table ARN
+    Value: !GetAtt UsersTable.Arn
+    Export:
+      Name: !Sub "webapp-users-table-arn-${Environment}"
+
+  SessionsTableName:
+    Description: Sessions DynamoDB table name
+    Value: !Ref SessionsTable
+    Export:
+      Name: !Sub "webapp-sessions-table-${Environment}"
+
+  SessionsTableArn:
+    Description: Sessions DynamoDB table ARN
+    Value: !GetAtt SessionsTable.Arn
+    Export:
+      Name: !Sub "webapp-sessions-table-arn-${Environment}"

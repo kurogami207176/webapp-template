@@ -40,12 +40,17 @@ Web: http://localhost:3000
 ### Running tests
 
 ```bash
-# API unit + integration tests
+# API tests (unit + integration) — uses SQLite, no running DB needed
 cd api
+source .venv/bin/activate
 pytest
 
-# E2E tests
+# With coverage
+pytest --cov=src --cov-report=term-missing
+
+# E2E tests — requires the app running locally first
 cd web
+npx playwright install chromium  # first time only
 npx playwright test
 ```
 
