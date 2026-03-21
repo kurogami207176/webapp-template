@@ -1,64 +1,64 @@
 # webapp-template
 
-A production-ready TypeScript monorepo template for building web applications and APIs.
+A production-ready template for building web applications and APIs.
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
-| API | Fastify + TypeScript |
-| Frontend | Next.js 14 (App Router) |
-| Database | PostgreSQL + Prisma |
-| IaC | Terraform (AWS ECS + RDS) |
+| API | Python + FastAPI |
+| Frontend | React + TypeScript (Next.js 14) |
+| Database | PostgreSQL + SQLAlchemy (async) + Alembic |
+| IaC | AWS CloudFormation (App Runner + ECR) |
 | CI/CD | GitHub Actions |
 | Containers | Docker + Docker Compose |
-| Testing | Vitest + Playwright |
-| Monorepo | Turborepo + npm workspaces |
+| API Tests | pytest + httpx |
+| E2E Tests | Playwright |
 
 ## Getting started
 
 ### Prerequisites
 
+- Python 3.12+
 - Node.js 20+
 - Docker & Docker Compose
-- (Optional) AWS CLI for deployment
 
 ### Local development
 
 ```bash
-# First-time setup: installs deps, copies .env, starts DB, runs migrations
-npm run setup
+# First-time setup
+./scripts/setup-local.sh
 
-# Start all services with hot reload
-npm run dev
+# Start all services
+docker compose -f docker/docker-compose.yml up
 ```
 
-The API will be available at http://localhost:3000 and the web app at http://localhost:3001.
+API: http://localhost:8000
+API docs: http://localhost:8000/docs
+Web: http://localhost:3000
 
-### Testing
+### Running tests
 
 ```bash
-# Unit tests
-npm test
+# API unit + integration tests
+cd api
+pytest
 
-# Integration tests (requires running DB)
-npm run test:integration
+# E2E tests
+cd web
+npx playwright test
 ```
 
-### Project structure
+## Project structure
 
 ```
-├── apps/
-│   ├── api/          # Fastify REST API
-│   └── web/          # Next.js frontend
-├── packages/
-│   └── shared-types/ # Shared Zod schemas + TypeScript types
-├── infra/            # Terraform IaC (AWS)
-├── scripts/          # Operational scripts
-├── docker/           # Docker Compose for local dev
-└── .github/          # GitHub Actions workflows
+├── api/        # FastAPI application
+├── web/        # Next.js frontend
+├── infra/      # CloudFormation templates
+├── scripts/    # Operational scripts
+└── docker/     # Docker Compose for local dev
 ```
 
 ## Deployment
 
-See [infra/README.md](infra/README.md) for infrastructure setup and deployment instructions.
+See [infra/README.md](infra/README.md) for CloudFormation deployment instructions.

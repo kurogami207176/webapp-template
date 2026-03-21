@@ -1,8 +1,21 @@
-# Dependencies
-node_modules/
-
-# Build outputs
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
 dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node / Next.js
+node_modules/
 .next/
 out/
 
@@ -11,18 +24,10 @@ out/
 .env.local
 .env.*.local
 
-# Coverage
-coverage/
-*.lcov
-
-# Terraform
-infra/**/.terraform/
-infra/**/*.tfstate
-infra/**/*.tfstate.backup
-infra/**/.terraform.lock.hcl
-infra/**/terraform.tfvars.secret
-
-# Misc
+# Terraform / misc
+*.tfstate
+*.tfstate.backup
 .DS_Store
 *.log
-.turbo/
+
+# Alembic (don't ignore versions)

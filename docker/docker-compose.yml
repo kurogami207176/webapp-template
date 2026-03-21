@@ -17,29 +17,28 @@ services:
 
   api:
     build:
-      context: ..
-      dockerfile: apps/api/Dockerfile.dev
+      context: ../api
+      dockerfile: Dockerfile.dev
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/webapp_dev
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/webapp_dev
     ports:
-      - "3000:3000"
+      - "8000:8000"
     volumes:
-      - ../apps/api/src:/app/apps/api/src
-      - ../packages/shared-types/src:/app/packages/shared-types/src
+      - ../api/src:/app/src
     depends_on:
       db:
         condition: service_healthy
 
   web:
     build:
-      context: ..
-      dockerfile: apps/web/Dockerfile
+      context: ../web
+      dockerfile: Dockerfile
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
-      - "3001:3001"
+      - "3000:3000"
     depends_on:
       - api
 

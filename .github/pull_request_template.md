@@ -12,8 +12,8 @@
 
 ## Testing
 
-- [ ] Unit tests pass (`npm test`)
-- [ ] Integration tests pass (`npm run test:integration`)
+- [ ] API tests pass (`cd api && pytest`)
+- [ ] Linting passes (`ruff check src tests`)
 - [ ] Manually tested locally
 
 ## Checklist

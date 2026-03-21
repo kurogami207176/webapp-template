@@ -17,14 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -35,28 +27,25 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
+      - name: Build and push image
         env:
-          IMAGE_TAG: ${{ github.sha }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: webapp-api
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -f apps/api/Dockerfile \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-            .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -f api/Dockerfile \
+            -t $ECR_REGISTRY/webapp-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/webapp-api:latest \
+            api/
+          docker push $ECR_REGISTRY/webapp-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/webapp-api:latest
 
-      - name: Run database migrations
-        run: bash scripts/db-migrate.sh staging
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          ECS_SUBNET_ID: ${{ secrets.ECS_SUBNET_ID }}
-          ECS_SECURITY_GROUP_ID: ${{ secrets.ECS_SECURITY_GROUP_ID }}
-
-      - name: Deploy to ECS
-        run: bash scripts/deploy.sh --env staging --tag ${{ github.sha }}
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Deploy CloudFormation stack
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/cloudformation/app-runner.yml \
+            --stack-name webapp-api-staging \
+            --parameter-overrides \
+              "file://infra/cloudformation/parameters/staging.json" \
+              "ImageTag=${{ github.sha }}" \
+            --capabilities CAPABILITY_IAM \
+            --region ${{ vars.AWS_REGION }}

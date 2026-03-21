@@ -1,0 +1,10 @@
+[
+  { "ParameterKey": "Environment", "ParameterValue": "staging" },
+  { "ParameterKey": "ImageTag", "ParameterValue": "latest" },
+  { "ParameterKey": "DatabaseUrl", "ParameterValue": "REPLACE_WITH_YOUR_DB_URL" },
+  { "ParameterKey": "JwtSecret", "ParameterValue": "REPLACE_WITH_STRONG_SECRET" },
+  { "ParameterKey": "Cpu", "ParameterValue": "512" },
+  { "ParameterKey": "Memory", "ParameterValue": "1024" },
+  { "ParameterKey": "MinSize", "ParameterValue": "1" },
+  { "ParameterKey": "MaxSize", "ParameterValue": "3" }
+]

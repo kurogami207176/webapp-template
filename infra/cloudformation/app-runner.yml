@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: App Runner service for webapp API
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [staging, production]
+  ImageTag:
+    Type: String
+    Description: Docker image tag to deploy
+    Default: latest
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: PostgreSQL connection string (use AWS Secrets Manager ARN prefix for secret references)
+  JwtSecret:
+    Type: String
+    NoEcho: true
+  Cpu:
+    Type: String
+    Default: "1024"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+  Memory:
+    Type: String
+    Default: "2048"
+    AllowedValues: ["512", "1024", "2048", "3072", "4096"]
+  MinSize:
+    Type: Number
+    Default: 1
+  MaxSize:
+    Type: Number
+    Default: 5
+
+Resources:
+  AppRunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "webapp-api-${Environment}-apprunner-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "webapp-api-${Environment}-instance-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+
+  ApiService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Sub "webapp-api-${Environment}"
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerRole.Arn
+        ImageRepository:
+          ImageIdentifier: !Sub
+            - "${RepoUri}:${ImageTag}"
+            - RepoUri: !ImportValue webapp-ecr-repo-uri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8000"
+            RuntimeEnvironmentVariables:
+              ENVIRONMENT: !Ref Environment
+              LOG_LEVEL: !If [IsProduction, "warn", "info"]
+              DATABASE_URL: !Ref DatabaseUrl
+              JWT_SECRET: !Ref JwtSecret
+              CORS_ORIGINS: !If
+                - IsProduction
+                - "https://your-production-domain.com"
+                - "https://your-staging-domain.com,http://localhost:3000"
+      InstanceConfiguration:
+        Cpu: !Ref Cpu
+        Memory: !Ref Memory
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 2
+        UnhealthyThreshold: 3
+      AutoScalingConfigurationArn: !GetAtt AutoScalingConfig.AutoScalingConfigurationArn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  AutoScalingConfig:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub "webapp-api-${Environment}-scaling"
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      MaxConcurrency: 100
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, production]
+
+Outputs:
+  ServiceUrl:
+    Description: App Runner service URL
+    Value: !GetAtt ApiService.ServiceUrl

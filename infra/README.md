@@ -1,37 +1,45 @@
-# Infrastructure (Terraform)
+# Infrastructure (CloudFormation)
 
-This directory contains Terraform configuration for deploying to AWS (ECS Fargate + RDS PostgreSQL).
+Deploys the API to AWS App Runner backed by an ECR container registry.
 
 ## Prerequisites
 
-- Terraform >= 1.6
-- AWS CLI configured with appropriate credentials
-- An S3 bucket + DynamoDB table for remote state (run `scripts/bootstrap-tf-backend.sh` once)
+- AWS CLI configured
+- Docker (for building and pushing images)
 
-## Structure
+## Architecture
 
-```
-infra/
-├── modules/          # Reusable Terraform modules
-│   ├── ecr-repo/
-│   ├── ecs-service/
-│   └── rds-postgres/
-└── environments/
-    ├── staging/
-    └── production/
-```
+- **ECR**: Container registry for API images
+- **App Runner**: Managed container service — no VPC, load balancer, or cluster to manage
 
-## Deploying
+## Deploy steps
+
+### 1. Bootstrap ECR (one-time)
 
 ```bash
-cd infra/environments/staging
-terraform init
-terraform plan
-terraform apply
+aws cloudformation deploy \
+  --template-file infra/cloudformation/ecr.yml \
+  --stack-name webapp-ecr \
+  --region us-east-1
 ```
 
-## First-time setup
+### 2. Build and push image
 
-1. Run `scripts/bootstrap-tf-backend.sh` to create the S3 + DynamoDB backend
-2. Update `environments/staging/terraform.tfvars` with your values
-3. `terraform init && terraform apply`
+```bash
+./scripts/deploy.sh --env staging --tag $(git rev-parse --short HEAD)
+```
+
+### 3. Deploy App Runner
+
+```bash
+aws cloudformation deploy \
+  --template-file infra/cloudformation/app-runner.yml \
+  --stack-name webapp-api-staging \
+  --parameter-overrides file://infra/cloudformation/parameters/staging.json \
+  --capabilities CAPABILITY_IAM \
+  --region us-east-1
+```
+
+## Updating the deployment
+
+Re-run `deploy.sh` to push a new image, then update the CloudFormation stack with the new image tag.
