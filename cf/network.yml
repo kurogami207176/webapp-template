@@ -189,7 +189,7 @@ Resources:
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ALB — allow HTTP/HTTPS from internet
+      GroupDescription: ALB - allow HTTP/HTTPS from internet
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -207,7 +207,7 @@ Resources:
   EcsSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ECS tasks — allow traffic only from ALB
+      GroupDescription: ECS tasks - allow traffic only from ALB
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
