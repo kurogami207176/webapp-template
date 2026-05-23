@@ -31,3 +31,10 @@ out/
 *.log
 
 # Alembic (don't ignore versions)
+
+# Node / Express app
+app/node_modules/
+app/coverage/
+app/.env
+app/.env.local
+.idea

@@ -1,9 +1,0 @@
-[
-  { "ParameterKey": "Environment", "ParameterValue": "production" },
-  { "ParameterKey": "ImageTag", "ParameterValue": "stable" },
-  { "ParameterKey": "JwtSecret", "ParameterValue": "REPLACE_WITH_STRONG_SECRET" },
-  { "ParameterKey": "Cpu", "ParameterValue": "1024" },
-  { "ParameterKey": "Memory", "ParameterValue": "2048" },
-  { "ParameterKey": "MinSize", "ParameterValue": "2" },
-  { "ParameterKey": "MaxSize", "ParameterValue": "10" }
-]
