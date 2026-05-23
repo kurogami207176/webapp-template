@@ -19,6 +19,6 @@ ENV PORT=3000 \
     ENVIRONMENT=production
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')" || exit 1
+  CMD wget -qO- http://localhost:3000/health || exit 1
 
-CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT} --workers 2 --timeout 60 --access-logfile -"]
+CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT} --workers 1 --timeout 60 --access-logfile -"]

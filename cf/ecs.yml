@@ -202,7 +202,7 @@ Resources:
       VpcId:
         Fn::ImportValue: !Sub "${NetworkStackName}-VpcId"
       HealthCheckPath: /health
-      HealthCheckIntervalSeconds: 30
+      HealthCheckIntervalSeconds: 15
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
@@ -249,7 +249,7 @@ Resources:
           ContainerPort: !Ref ContainerPort
           TargetGroupArn: !Ref TargetGroup
       DeploymentConfiguration:
-        MinimumHealthyPercent: 100
+        MinimumHealthyPercent: 0
         MaximumPercent: 200
         DeploymentCircuitBreaker:
           Enable: true

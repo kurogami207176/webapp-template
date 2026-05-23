@@ -10,8 +10,7 @@ set -euo pipefail
 
 TAG="latest"
 REGION="ap-southeast-2"
-APP_NAME="webapp-template"
-ECR_STACK="${APP_NAME}-ecr"
+APP_NAME=""
 PLATFORM="linux/amd64"
 APP_DIR="$(cd "$(dirname "$0")/../app" && pwd)"
 
@@ -20,9 +19,23 @@ while [[ $# -gt 0 ]]; do
     --tag)      TAG="$2";      shift 2 ;;
     --region)   REGION="$2";   shift 2 ;;
     --platform) PLATFORM="$2"; shift 2 ;;
+    --app-name) APP_NAME="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
+
+# ---- derive APP_NAME from git remote if not supplied ------------------------
+if [[ -z "${APP_NAME}" ]]; then
+  APP_NAME=$(git remote get-url origin 2>/dev/null \
+    | sed 's|.*[:/]\([^/]*\)\.git$|\1|; s|.*[:/]\([^/]*\)$|\1|')
+  if [[ -z "${APP_NAME}" ]]; then
+    echo "ERROR: could not derive app name from git remote. Pass --app-name <name>." >&2
+    exit 1
+  fi
+  echo "▶ Derived APP_NAME from git remote: ${APP_NAME}"
+fi
+
+ECR_STACK="${APP_NAME}-ecr"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Building & pushing image — tag: ${TAG}  region: ${REGION}"
