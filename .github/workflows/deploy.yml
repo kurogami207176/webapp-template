@@ -221,13 +221,14 @@ jobs:
             if [[ "${STATUS}" == "200" ]]; then
               BODY=$(cat /tmp/hello_body.json)
               echo "Response: ${BODY}"
-              echo "${BODY}" | python3 -c "
-import sys, json
-body = json.load(sys.stdin)
-assert body.get('message') == 'Hello, world!', f'Unexpected body: {body}'
-print('✓ /hello returned expected response')
-"
-              exit 0
+              MSG=$(echo "${BODY}" | jq -r '.message')
+              if [[ "${MSG}" == "Hello, world!" ]]; then
+                echo "✓ /hello returned expected response"
+                exit 0
+              else
+                echo "ERROR: unexpected body — got: ${BODY}" >&2
+                exit 1
+              fi
             fi
             echo "  attempt ${i}/12 — got HTTP ${STATUS}, retrying in 5 s…"
             sleep 5
