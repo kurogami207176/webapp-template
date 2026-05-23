@@ -99,6 +99,31 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      # ---- Deploy ECR stack (idempotent — creates repo on first run) ----
+      - name: Deploy ECR stack
+        run: |
+          aws cloudformation deploy \
+            --template-file cf/ecr.yml \
+            --stack-name "${APP_NAME}-ecr" \
+            --parameter-overrides \
+                "AppName=${APP_NAME}" \
+                "Environment=${ENVIRONMENT}" \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset
+
+      # ---- Deploy Network stack (idempotent) ---------------------------
+      - name: Deploy Network stack
+        run: |
+          aws cloudformation deploy \
+            --template-file cf/network.yml \
+            --stack-name "${APP_NAME}-network-${ENVIRONMENT}" \
+            --parameter-overrides \
+                "AppName=${APP_NAME}" \
+                "Environment=${ENVIRONMENT}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset
+
       # ---- ECR login ---------------------------------------------------
       - name: Login to Amazon ECR
         id: login-ecr
