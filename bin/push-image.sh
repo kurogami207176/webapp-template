@@ -36,6 +36,18 @@ if [[ -z "${APP_NAME}" ]]; then
 fi
 
 ECR_STACK="${APP_NAME}-ecr"
+CF_DIR="$(cd "$(dirname "$0")/../cf" && pwd)"
+
+# ---- load tags from cf/tags.json and convert to --label flags ---------------
+TAGS_FILE="${CF_DIR}/tags.json"
+if [[ ! -f "${TAGS_FILE}" ]]; then
+  echo "ERROR: ${TAGS_FILE} not found." >&2; exit 1
+fi
+# Build array of --label key=value args
+DOCKER_LABELS=()
+while IFS= read -r pair; do
+  DOCKER_LABELS+=(--label "${pair}")
+done < <(jq -r '.[] | "\(.Key)=\(.Value)"' "${TAGS_FILE}")
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Building & pushing image — tag: ${TAG}  region: ${REGION}"
@@ -66,6 +78,7 @@ echo ""
 echo "▶ Building image (platform=${PLATFORM})…"
 docker build \
   --platform "${PLATFORM}" \
+  "${DOCKER_LABELS[@]}" \
   -t "${ECR_URI}:${TAG}" \
   -t "${ECR_URI}:latest" \
   "${APP_DIR}"

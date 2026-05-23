@@ -18,7 +18,5 @@ EXPOSE 3000
 ENV PORT=3000 \
     ENVIRONMENT=production
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
-
+# Health checking is handled by the ECS/ALB target group — no HEALTHCHECK needed here
 CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT} --workers 1 --timeout 60 --access-logfile -"]

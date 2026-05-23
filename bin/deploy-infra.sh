@@ -41,6 +41,14 @@ NETWORK_STACK="${APP_NAME}-network-${ENV}"
 ECS_STACK="${APP_NAME}-ecs-${ENV}"
 CF_DIR="$(cd "$(dirname "$0")/../cf" && pwd)"
 
+# ---- load tags from cf/tags.json --------------------------------------------
+TAGS_FILE="${CF_DIR}/tags.json"
+if [[ ! -f "${TAGS_FILE}" ]]; then
+  echo "ERROR: ${TAGS_FILE} not found." >&2; exit 1
+fi
+# Convert [{"Key":"k","Value":"v"},...] → "k=v k2=v2 ..." for --tags
+CF_TAGS=$(jq -r '.[] | "\(.Key)=\(.Value)"' "${TAGS_FILE}" | tr '\n' ' ')
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo " Deploying infrastructure — env: ${ENV}  region: ${REGION}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -66,6 +74,7 @@ aws cloudformation deploy \
   --parameter-overrides \
       "AppName=${APP_NAME}" \
       "Environment=${ENV}" \
+  --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
@@ -86,6 +95,7 @@ aws cloudformation deploy \
   --parameter-overrides \
       "AppName=${APP_NAME}" \
       "Environment=${ENV}" \
+  --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
@@ -103,6 +113,7 @@ aws cloudformation deploy \
       "NetworkStackName=${NETWORK_STACK}" \
       "EcrStackName=${ECR_STACK}" \
       "ImageTag=latest" \
+  --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
