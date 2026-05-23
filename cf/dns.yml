@@ -46,13 +46,9 @@ Resources:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
-      SubjectAlternativeNames:
-        - !Sub "${AppsSubdomain}.${DomainNameSsmPath}"
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
-          HostedZoneId: !Ref HostedZoneIdSsmPath
-        - DomainName: !Sub "${AppsSubdomain}.${DomainNameSsmPath}"
           HostedZoneId: !Ref HostedZoneIdSsmPath
       Tags:
         - Key: AppName
