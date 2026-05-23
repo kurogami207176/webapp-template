@@ -154,18 +154,15 @@ jobs:
       - name: Deploy ECS CloudFormation stack
         env:
           IMAGE_TAG: ${{ github.sha }}
-          NETWORK_STACK: ${{ env.APP_NAME }}-network-${{ env.ENVIRONMENT }}
-          ECS_STACK: ${{ env.APP_NAME }}-ecs-${{ env.ENVIRONMENT }}
-          ECR_STACK: ${{ env.APP_NAME }}-ecr
         run: |
           aws cloudformation deploy \
             --template-file cf/ecs.yml \
-            --stack-name "${ECS_STACK}" \
+            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
             --parameter-overrides \
                 "AppName=${APP_NAME}" \
                 "Environment=${ENVIRONMENT}" \
-                "NetworkStackName=${NETWORK_STACK}" \
-                "EcrStackName=${ECR_STACK}" \
+                "NetworkStackName=${APP_NAME}-network-${ENVIRONMENT}" \
+                "EcrStackName=${APP_NAME}-ecr" \
                 "ImageTag=${IMAGE_TAG}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --region "${AWS_REGION}" \
@@ -173,17 +170,15 @@ jobs:
 
       # ---- Force new deployment & wait for stability -------------------
       - name: Force new ECS deployment
-        env:
-          ECS_STACK: ${{ env.APP_NAME }}-ecs-${{ env.ENVIRONMENT }}
         run: |
           CLUSTER=$(aws cloudformation describe-stacks \
-            --stack-name "${ECS_STACK}" \
+            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
             --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' \
             --output text)
 
           SERVICE=$(aws cloudformation describe-stacks \
-            --stack-name "${ECS_STACK}" \
+            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
             --query 'Stacks[0].Outputs[?OutputKey==`ServiceName`].OutputValue' \
             --output text)
@@ -203,11 +198,9 @@ jobs:
 
       # ---- Smoke test: /hello must return 200 + expected body -----------
       - name: Smoke test — /hello
-        env:
-          ECS_STACK: ${{ env.APP_NAME }}-ecs-${{ env.ENVIRONMENT }}
         run: |
           ALB=$(aws cloudformation describe-stacks \
-            --stack-name "${ECS_STACK}" \
+            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
             --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
             --output text)
@@ -239,11 +232,9 @@ jobs:
 
       # ---- Print the app URL ------------------------------------------
       - name: Print app URL
-        env:
-          ECS_STACK: ${{ env.APP_NAME }}-ecs-${{ env.ENVIRONMENT }}
         run: |
           ALB=$(aws cloudformation describe-stacks \
-            --stack-name "${ECS_STACK}" \
+            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
             --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
             --output text)
