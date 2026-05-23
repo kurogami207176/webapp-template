@@ -201,6 +201,41 @@ jobs:
             --services "${SERVICE}" \
             --region "${AWS_REGION}"
 
+      # ---- Smoke test: /hello must return 200 + expected body -----------
+      - name: Smoke test — /hello
+        env:
+          ECS_STACK: ${{ env.APP_NAME }}-ecs-${{ env.ENVIRONMENT }}
+        run: |
+          ALB=$(aws cloudformation describe-stacks \
+            --stack-name "${ECS_STACK}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
+            --output text)
+
+          URL="http://${ALB}/hello"
+          echo "Probing ${URL}…"
+
+          # Retry for up to 60 s to allow ALB to finish routing to new tasks
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /tmp/hello_body.json -w "%{http_code}" "${URL}")
+            if [[ "${STATUS}" == "200" ]]; then
+              BODY=$(cat /tmp/hello_body.json)
+              echo "Response: ${BODY}"
+              echo "${BODY}" | python3 -c "
+import sys, json
+body = json.load(sys.stdin)
+assert body.get('message') == 'Hello, world!', f'Unexpected body: {body}'
+print('✓ /hello returned expected response')
+"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 — got HTTP ${STATUS}, retrying in 5 s…"
+            sleep 5
+          done
+
+          echo "ERROR: /hello did not return 200 after 60 s" >&2
+          exit 1
+
       # ---- Print the app URL ------------------------------------------
       - name: Print app URL
         env:

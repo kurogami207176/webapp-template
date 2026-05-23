@@ -21,6 +21,11 @@ def index():
     return jsonify(message="webapp-template API", version="1.0.0")
 
 
+@app.get("/hello")
+def hello():
+    return jsonify(message="Hello, world!")
+
+
 @app.errorhandler(404)
 def not_found(_e):
     return jsonify(error="Not found"), 404

@@ -23,6 +23,12 @@ def test_index(client):
     assert res.get_json()["message"] == "webapp-template API"
 
 
+def test_hello(client):
+    res = client.get("/hello")
+    assert res.status_code == 200
+    assert res.get_json()["message"] == "Hello, world!"
+
+
 def test_404(client):
     res = client.get("/nonexistent")
     assert res.status_code == 404
