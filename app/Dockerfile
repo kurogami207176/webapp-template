@@ -1,27 +1,24 @@
-# ---- build stage ----
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+FROM python:3.12-slim
 
-# ---- runtime stage ----
-FROM node:20-alpine AS runtime
 WORKDIR /app
 
 # Non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-COPY --chown=appuser:appgroup --from=deps /app/node_modules ./node_modules
-COPY --chown=appuser:appgroup src/ ./src/
-COPY --chown=appuser:appgroup package.json ./
+# Install deps first (layer cache)
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY --chown=appuser:appgroup app.py wsgi.py ./
 
 USER appuser
 
 EXPOSE 3000
-ENV NODE_ENV=production \
-    PORT=3000
+ENV PORT=3000 \
+    ENVIRONMENT=production
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')" || exit 1
 
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "gunicorn wsgi:app --bind 0.0.0.0:${PORT} --workers 2 --timeout 60 --access-logfile -"]

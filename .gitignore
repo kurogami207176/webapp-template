@@ -32,9 +32,14 @@ out/
 
 # Alembic (don't ignore versions)
 
-# Node / Express app
-app/node_modules/
-app/coverage/
+# Flask app
+app/__pycache__/
+app/*.pyc
+app/.venv/
+app/.pytest_cache/
+app/.coverage
+app/coverage.xml
+app/htmlcov/
 app/.env
 app/.env.local
 .idea
