@@ -5,12 +5,12 @@
 # Use after pushing a new image with bin/push-image.sh.
 #
 # Usage:
-#   ./bin/deploy-app.sh [--env staging|production] [--region us-east-1] [--tag v1.2.3]
+#   ./bin/deploy-app.sh [--env staging|production] [--region ap-southeast-2] [--tag v1.2.3]
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 ENV="production"
-REGION="us-east-1"
+REGION="ap-southeast-2"
 APP_NAME="webapp-template"
 TAG=""
 

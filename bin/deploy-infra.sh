@@ -5,13 +5,13 @@
 # Run this once to provision; afterwards use bin/deploy-app.sh to release.
 #
 # Usage:
-#   ./bin/deploy-infra.sh [--env staging|production] [--region us-east-1]
+#   ./bin/deploy-infra.sh [--env staging|production] [--region ap-southeast-2]
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 # ---- defaults ---------------------------------------------------------------
 ENV="production"
-REGION="us-east-1"
+REGION="ap-southeast-2"
 APP_NAME="webapp-template"
 
 # ---- parse args -------------------------------------------------------------

@@ -4,11 +4,11 @@
 # Creates the GitHub OIDC provider and deploy role (run once per account).
 #
 # Usage:
-#   ./bin/setup-github-oidc.sh --github-org <org> --github-repo <repo> [--region us-east-1]
+#   ./bin/setup-github-oidc.sh --github-org <org> --github-repo <repo> [--region ap-southeast-2]
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-REGION="us-east-1"
+REGION="ap-southeast-2"
 APP_NAME="webapp-template"
 GITHUB_ORG=""
 GITHUB_REPO=""

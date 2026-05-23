@@ -4,12 +4,12 @@
 # Build the Docker image from app/ and push it to ECR.
 #
 # Usage:
-#   ./bin/push-image.sh [--tag v1.2.3] [--region us-east-1] [--platform linux/amd64]
+#   ./bin/push-image.sh [--tag v1.2.3] [--region ap-southeast-2] [--platform linux/amd64]
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 TAG="latest"
-REGION="us-east-1"
+REGION="ap-southeast-2"
 APP_NAME="webapp-template"
 ECR_STACK="${APP_NAME}-ecr"
 PLATFORM="linux/amd64"
