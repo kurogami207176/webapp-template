@@ -151,6 +151,7 @@ jobs:
           docker push "${ECR_URI}:latest"
 
       # ---- Update ECS CloudFormation stack (registers new task def) ----
+      # CreateHttpListener=false — the DNS stack owns port 80 (redirect) and 443
       - name: Deploy ECS CloudFormation stack
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -164,7 +165,24 @@ jobs:
                 "NetworkStackName=${APP_NAME}-network-${ENVIRONMENT}" \
                 "EcrStackName=${APP_NAME}-ecr" \
                 "ImageTag=${IMAGE_TAG}" \
+                "CreateHttpListener=false" \
             --capabilities CAPABILITY_NAMED_IAM \
+            --region "${AWS_REGION}" \
+            --no-fail-on-empty-changeset
+
+      # ---- Deploy DNS + TLS stack (ACM cert, HTTPS listener, Route53) ---
+      - name: Deploy DNS stack
+        run: |
+          CF_TAGS=$(jq -r '.[] | "\(.Key)=\(.Value)"' cf/tags.json | tr '\n' ' ')
+          aws cloudformation deploy \
+            --template-file cf/dns.yml \
+            --stack-name "${APP_NAME}-dns-${ENVIRONMENT}" \
+            --parameter-overrides \
+                "AppName=${APP_NAME}" \
+                "Environment=${ENVIRONMENT}" \
+                "EcsStackName=${APP_NAME}-ecs-${ENVIRONMENT}" \
+            --tags ${CF_TAGS} \
+            --capabilities CAPABILITY_IAM \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
 
@@ -196,48 +214,42 @@ jobs:
             --services "${SERVICE}" \
             --region "${AWS_REGION}"
 
-      # ---- Smoke test: /hello must return 200 + expected body -----------
-      - name: Smoke test — /hello
+      # ---- Smoke test (uses HTTPS URL from DNS stack) -------------------
+      - name: Smoke test
         run: |
-          ALB=$(aws cloudformation describe-stacks \
-            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
+          APP_URL=$(aws cloudformation describe-stacks \
+            --stack-name "${APP_NAME}-dns-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
-            --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
-            --output text)
+            --query 'Stacks[0].Outputs[?OutputKey==`AppUrl`].OutputValue' \
+            --output text 2>/dev/null || true)
 
-          URL="http://${ALB}/hello"
-          echo "Probing ${URL}…"
-
-          # Retry for up to 60 s to allow ALB to finish routing to new tasks
-          for i in $(seq 1 12); do
-            STATUS=$(curl -s -o /tmp/hello_body.json -w "%{http_code}" "${URL}")
-            if [[ "${STATUS}" == "200" ]]; then
-              BODY=$(cat /tmp/hello_body.json)
-              echo "Response: ${BODY}"
-              MSG=$(echo "${BODY}" | jq -r '.message')
-              if [[ "${MSG}" == "Hello, world!" ]]; then
-                echo "✓ /hello returned expected response"
-                exit 0
-              else
-                echo "ERROR: unexpected body — got: ${BODY}" >&2
-                exit 1
-              fi
-            fi
-            echo "  attempt ${i}/12 — got HTTP ${STATUS}, retrying in 5 s…"
-            sleep 5
-          done
-
-          echo "ERROR: /hello did not return 200 after 60 s" >&2
-          exit 1
+          if [[ -n "${APP_URL}" ]]; then
+            ./bin/smoke-test.sh --url "${APP_URL}"
+          else
+            ./bin/smoke-test.sh \
+              --env "${ENVIRONMENT}" \
+              --region "${AWS_REGION}" \
+              --app-name "${APP_NAME}"
+          fi
 
       # ---- Print the app URL ------------------------------------------
       - name: Print app URL
         run: |
-          ALB=$(aws cloudformation describe-stacks \
-            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
+          APP_URL=$(aws cloudformation describe-stacks \
+            --stack-name "${APP_NAME}-dns-${ENVIRONMENT}" \
             --region "${AWS_REGION}" \
-            --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
-            --output text)
+            --query 'Stacks[0].Outputs[?OutputKey==`AppUrl`].OutputValue' \
+            --output text 2>/dev/null || true)
+
+          if [[ -z "${APP_URL}" ]]; then
+            ALB=$(aws cloudformation describe-stacks \
+              --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
+              --region "${AWS_REGION}" \
+              --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
+              --output text)
+            APP_URL="http://${ALB}"
+          fi
+
           echo "### ✅ Deployed to ${ENVIRONMENT}" >> "$GITHUB_STEP_SUMMARY"
-          echo "App URL: http://${ALB}" >> "$GITHUB_STEP_SUMMARY"
+          echo "App URL: ${APP_URL}" >> "$GITHUB_STEP_SUMMARY"
           echo "Image:   ${{ steps.ecr.outputs.uri }}:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

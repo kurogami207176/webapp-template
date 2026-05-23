@@ -52,6 +52,17 @@ Parameters:
     Type: Number
     Default: 30
 
+  CreateHttpListener:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Set to false when cf/dns.yml is deployed — it will own the port-80
+      redirect listener instead.
+
+Conditions:
+  HttpListenerEnabled: !Equals [!Ref CreateHttpListener, "true"]
+
 Resources:
   # ---------------------------------------------------------------
   # CloudWatch Log Group
@@ -208,6 +219,7 @@ Resources:
 
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HttpListenerEnabled
     Properties:
       LoadBalancerArn: !Ref ALB
       Port: 80
@@ -221,7 +233,7 @@ Resources:
   # ---------------------------------------------------------------
   Service:
     Type: AWS::ECS::Service
-    DependsOn: Listener
+    DependsOn: TargetGroup
     Properties:
       ServiceName: !Sub "${AppName}-${Environment}"
       Cluster: !Ref Cluster
@@ -272,6 +284,11 @@ Outputs:
     Value: !Ref ALB
     Export:
       Name: !Sub "${AWS::StackName}-AlbArn"
+
+  TargetGroupArn:
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-TargetGroupArn"
 
   TaskDefinitionArn:
     Value: !Ref TaskDefinition

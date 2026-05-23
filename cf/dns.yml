@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  ACM certificate, DNS validation records, and Route53 alias for
+  <AppName>.apps.<domain> → ALB.
+  Deploy this AFTER the ECS stack so the ALB DNS name is available.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: webapp-template
+    Description: >
+      Used as the subdomain label — the record created will be
+      <AppName>.<AppsSubdomain>.<domain>.
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [staging, production]
+
+  AppsSubdomain:
+    Type: String
+    Default: apps
+    Description: Second-level label (result is <AppName>.<AppsSubdomain>.<domain>).
+
+  EcsStackName:
+    Type: String
+    Default: webapp-template-ecs-production
+    Description: Name of the deployed ECS CloudFormation stack.
+
+  # SSM parameter paths — resolved at deploy time
+  DomainNameSsmPath:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dns/domain-name
+    Description: SSM parameter containing the root domain (e.g. alainjunia.com).
+
+  HostedZoneIdSsmPath:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dns/hosted-zone-id
+    Description: SSM parameter containing the Route53 hosted zone ID.
+
+Resources:
+  # ---------------------------------------------------------------
+  # ACM certificate (wildcard covers all apps under apps.<domain>)
+  # ---------------------------------------------------------------
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
+      SubjectAlternativeNames:
+        - !Sub "${AppsSubdomain}.${DomainNameSsmPath}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
+          HostedZoneId: !Ref HostedZoneIdSsmPath
+        - DomainName: !Sub "${AppsSubdomain}.${DomainNameSsmPath}"
+          HostedZoneId: !Ref HostedZoneIdSsmPath
+      Tags:
+        - Key: AppName
+          Value: !Ref AppName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # ---------------------------------------------------------------
+  # HTTPS listener on the ALB (port 443)
+  # ---------------------------------------------------------------
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Fn::ImportValue: !Sub "${EcsStackName}-AlbArn"
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref Certificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Fn::ImportValue: !Sub "${EcsStackName}-TargetGroupArn"
+
+  # HTTP → HTTPS redirect on port 80
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Fn::ImportValue: !Sub "${EcsStackName}-AlbArn"
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  # ---------------------------------------------------------------
+  # Route53 alias: <AppName>.<AppsSubdomain>.<domain> → ALB
+  # ---------------------------------------------------------------
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneIdSsmPath
+      Name: !Sub "${AppName}.${AppsSubdomain}.${DomainNameSsmPath}."
+      Type: A
+      AliasTarget:
+        DNSName:
+          Fn::ImportValue: !Sub "${EcsStackName}-AlbDnsName"
+        EvaluateTargetHealth: true
+        HostedZoneId: !GetAtt AlbHostedZoneLookup.HostedZoneId
+
+  # Custom resource to look up the ALB's hosted zone ID
+  # (needed for the Route53 alias — it's different from the Route53 hosted zone)
+  AlbHostedZoneLookupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeLoadBalancers
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: elasticloadbalancing:DescribeLoadBalancers
+                Resource: "*"
+
+  AlbHostedZoneLookupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt AlbHostedZoneLookupRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import boto3, cfnresponse
+
+          def handler(event, context):
+            try:
+              if event['RequestType'] == 'Delete':
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                return
+              alb_dns = event['ResourceProperties']['AlbDnsName']
+              region  = event['ResourceProperties']['Region']
+              elb = boto3.client('elbv2', region_name=region)
+              paginator = elb.get_paginator('describe_load_balancers')
+              for page in paginator.paginate():
+                for lb in page['LoadBalancers']:
+                  if lb['DNSName'].lower() == alb_dns.lower():
+                    cfnresponse.send(event, context, cfnresponse.SUCCESS,
+                      {'HostedZoneId': lb['CanonicalHostedZoneId']})
+                    return
+              raise Exception(f'ALB not found for DNS name: {alb_dns}')
+            except Exception as e:
+              cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  AlbHostedZoneLookup:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt AlbHostedZoneLookupFunction.Arn
+      AlbDnsName:
+        Fn::ImportValue: !Sub "${EcsStackName}-AlbDnsName"
+      Region: !Ref AWS::Region
+
+Outputs:
+  AppUrl:
+    Description: HTTPS URL for this app
+    Value: !Sub "https://${AppName}.${AppsSubdomain}.${DomainNameSsmPath}"
+    Export:
+      Name: !Sub "${AWS::StackName}-AppUrl"
+
+  CertificateArn:
+    Description: ARN of the ACM wildcard certificate
+    Value: !Ref Certificate
+    Export:
+      Name: !Sub "${AWS::StackName}-CertificateArn"
