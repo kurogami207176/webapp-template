@@ -138,9 +138,13 @@ jobs:
           docker push "${ECR_URI}:latest"
 
       # ---- Deploy ECS Express stack (auto-provisions ALB, SGs, scaling) ----
+      # DB_STACK_NAME is an optional repository variable. Set it to the name of
+      # the deployed database CloudFormation stack (e.g. "webapp-production")
+      # to wire up DB_SECRET_ARN. Leave it unset to run without a database.
       - name: Deploy ECS CloudFormation stack
         env:
           IMAGE_TAG: ${{ github.sha }}
+          DB_STACK_NAME: ${{ vars.DB_STACK_NAME }}
         run: |
           aws cloudformation deploy \
             --template-file cf/ecs.yml \
@@ -150,6 +154,7 @@ jobs:
                 "Environment=${ENVIRONMENT}" \
                 "EcrStackName=${APP_NAME}-ecr" \
                 "ImageTag=${IMAGE_TAG}" \
+                "DatabaseStackName=${DB_STACK_NAME}" \
             --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset

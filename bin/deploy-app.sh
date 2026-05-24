@@ -13,6 +13,7 @@ ENV="production"
 REGION="ap-southeast-2"
 APP_NAME=""
 TAG="latest"
+DB_STACK=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -20,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     --region)   REGION="$2";   shift 2 ;;
     --tag)      TAG="$2";      shift 2 ;;
     --app-name) APP_NAME="$2"; shift 2 ;;
+    --db-stack) DB_STACK="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -61,6 +63,7 @@ aws cloudformation deploy \
       "Environment=${ENV}" \
       "EcrStackName=${ECR_STACK}" \
       "ImageTag=${TAG}" \
+      "DatabaseStackName=${DB_STACK}" \
   --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
   --region "${REGION}" \

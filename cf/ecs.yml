@@ -4,6 +4,7 @@ Description: >
   Automatically provisions the ALB, target group, security groups,
   auto-scaling, and CloudWatch logs — no separate network stack required.
   Depends on the ECR stack (cf/ecr.yml).
+  Optionally connects to Aurora via the database stack (cf in webapp-environment-setup).
 
 Parameters:
   AppName:
@@ -19,6 +20,13 @@ Parameters:
     Type: String
     Default: webapp-template-ecr
     Description: Name of the deployed ECR CloudFormation stack.
+
+  DatabaseStackName:
+    Type: String
+    Default: ""
+    Description: >
+      Name of the deployed database CloudFormation stack (webapp-environment-setup).
+      Leave empty to run without a database — DB_SECRET_ARN will not be set.
 
   ImageTag:
     Type: String
@@ -51,6 +59,9 @@ Parameters:
     MinValue: 1
     MaxValue: 10
 
+Conditions:
+  HasDatabase: !Not [!Equals [!Ref DatabaseStackName, ""]]
+
 Resources:
   # ---------------------------------------------------------------
   # IAM — ECS task execution role (pull image, write logs)
@@ -74,7 +85,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # IAM — ECS task role (runtime permissions for your app: SSM, S3, etc.)
+  # IAM — ECS task role (runtime permissions for your app)
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -91,6 +102,27 @@ Resources:
           Value: !Ref AppName
         - Key: Environment
           Value: !Ref Environment
+
+  # IAM — Inline policy granting the task role access to the DB secret.
+  # Scoped to the exact secret ARN exported by the database stack.
+  # Only created when DatabaseStackName is provided.
+  TaskRoleDbPolicy:
+    Type: AWS::IAM::Policy
+    Condition: HasDatabase
+    Properties:
+      PolicyName: !Sub "${AppName}-${Environment}-read-db-secret"
+      Roles:
+        - !Ref TaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadDbSecret
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource:
+              Fn::ImportValue: !Sub "${DatabaseStackName}-DbAppSecretArn"
 
   # IAM — Infrastructure role (ECS Express manages ALB, SGs, auto-scaling on your behalf)
   InfrastructureRole:
@@ -141,6 +173,14 @@ Resources:
             Value: !Ref Environment
           - Name: PYTHONDONTWRITEBYTECODE
             Value: "1"
+          # DB_SECRET_ARN is only injected when a database stack is wired up.
+          # db.py checks for this var at startup — absent means no DB pool.
+          - !If
+            - HasDatabase
+            - Name: DB_SECRET_ARN
+              Value:
+                Fn::ImportValue: !Sub "${DatabaseStackName}-DbAppSecretArn"
+            - !Ref AWS::NoValue
       ScalingTarget:
         MinTaskCount: !Ref MinTaskCount
         MaxTaskCount: !Ref MaxTaskCount

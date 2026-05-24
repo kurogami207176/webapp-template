@@ -17,6 +17,7 @@ ENV="production"
 REGION="ap-southeast-2"
 APP_NAME=""
 SKIP_DNS="false"
+DB_STACK=""   # e.g. webapp-production (from webapp-environment-setup)
 
 # ---- parse args -------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --region)    REGION="$2";    shift 2 ;;
     --app-name)  APP_NAME="$2";  shift 2 ;;
     --skip-dns)  SKIP_DNS="true"; shift 1 ;;
+    --db-stack)  DB_STACK="$2";  shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -106,6 +108,7 @@ aws cloudformation deploy \
       "Environment=${ENV}" \
       "EcrStackName=${ECR_STACK}" \
       "ImageTag=latest" \
+      "DatabaseStackName=${DB_STACK}" \
   --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
   --region "${REGION}" \
