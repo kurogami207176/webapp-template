@@ -39,13 +39,13 @@ Parameters:
     Default: "512"
     AllowedValues: ["512", "1024", "2048", "4096", "8192"]
 
-  MinCount:
+  MinTaskCount:
     Type: Number
     Default: 1
     MinValue: 1
     MaxValue: 10
 
-  MaxCount:
+  MaxTaskCount:
     Type: Number
     Default: 5
     MinValue: 1
@@ -142,8 +142,8 @@ Resources:
           - Name: PYTHONDONTWRITEBYTECODE
             Value: "1"
       ScalingTarget:
-        MinCount: !Ref MinCount
-        MaxCount: !Ref MaxCount
+        MinTaskCount: !Ref MinTaskCount
+        MaxTaskCount: !Ref MaxTaskCount
       Tags:
         - Key: AppName
           Value: !Ref AppName
