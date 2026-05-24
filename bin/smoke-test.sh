@@ -53,7 +53,12 @@ if [[ -z "${BASE_URL}" ]]; then
     echo "       Run ./bin/deploy-infra.sh first, or pass --url <base-url>." >&2
     exit 1
   fi
-  BASE_URL="http://${ALB}"
+  # Express Mode Endpoint is already a full URL (https://...); plain ALB DNS is not.
+  if [[ "${ALB}" == http* ]]; then
+    BASE_URL="${ALB}"
+  else
+    BASE_URL="https://${ALB}"
+  fi
 fi
 
 # ---- test cases -------------------------------------------------------------

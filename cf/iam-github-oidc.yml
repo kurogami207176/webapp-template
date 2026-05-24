@@ -105,24 +105,8 @@ Resources:
                 Effect: Allow
                 Action: iam:PassRole
                 Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-*"
-        - PolicyName: EcsUpdateService
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Sid: EcsDeploy
-                Effect: Allow
-                Action:
-                  - ecs:DescribeServices
-                  - ecs:UpdateService
-                  - ecs:DescribeTaskDefinition
-                  - ecs:RegisterTaskDefinition
-                Resource: "*"
-              - Sid: IamForEcs
-                Effect: Allow
-                Action:
-                  - iam:PassRole
-                Resource:
-                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-*-ecs-*"
+        # ECS Express Mode deploys via CloudFormation stack updates only;
+        # no direct ecs:UpdateService calls are needed from CI.
       Tags:
         - Key: AppName
           Value: !Ref AppName

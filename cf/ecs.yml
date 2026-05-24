@@ -1,7 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  ECS Fargate cluster, ALB, task definition, and service for webapp-template.
-  Depends on the network stack (cf/network.yml) and ECR stack (cf/ecr.yml).
+  ECS Express Mode service for webapp-template.
+  Automatically provisions the ALB, target group, security groups,
+  auto-scaling, and CloudWatch logs — no separate network stack required.
+  Depends on the ECR stack (cf/ecr.yml).
 
 Parameters:
   AppName:
@@ -12,11 +14,6 @@ Parameters:
     Type: String
     Default: production
     AllowedValues: [staging, production]
-
-  NetworkStackName:
-    Type: String
-    Default: webapp-template-network
-    Description: Name of the deployed network CloudFormation stack.
 
   EcrStackName:
     Type: String
@@ -42,38 +39,19 @@ Parameters:
     Default: "512"
     AllowedValues: ["512", "1024", "2048", "4096", "8192"]
 
-  DesiredCount:
+  MinCount:
     Type: Number
     Default: 1
     MinValue: 1
     MaxValue: 10
 
-  LogRetentionDays:
+  MaxCount:
     Type: Number
-    Default: 30
-
-  CreateHttpListener:
-    Type: String
-    Default: "true"
-    AllowedValues: ["true", "false"]
-    Description: >
-      Set to false when cf/dns.yml is deployed — it will own the port-80
-      redirect listener instead.
-
-Conditions:
-  HttpListenerEnabled: !Equals [!Ref CreateHttpListener, "true"]
+    Default: 5
+    MinValue: 1
+    MaxValue: 10
 
 Resources:
-  # ---------------------------------------------------------------
-  # CloudWatch Log Group
-  # ---------------------------------------------------------------
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
-    Properties:
-      LogGroupName: !Sub "/ecs/${AppName}-${Environment}"
-      RetentionInDays: !Ref LogRetentionDays
-
   # ---------------------------------------------------------------
   # IAM — ECS task execution role (pull image, write logs)
   # ---------------------------------------------------------------
@@ -96,7 +74,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # IAM — ECS task role (runtime permissions: read SSM, etc.)
+  # IAM — ECS task role (runtime permissions for your app: SSM, S3, etc.)
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -114,22 +92,20 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # ---------------------------------------------------------------
-  # ECS Cluster
-  # ---------------------------------------------------------------
-  Cluster:
-    Type: AWS::ECS::Cluster
+  # IAM — Infrastructure role (ECS Express manages ALB, SGs, auto-scaling on your behalf)
+  InfrastructureRole:
+    Type: AWS::IAM::Role
     Properties:
-      ClusterName: !Sub "${AppName}-${Environment}"
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-      ClusterSettings:
-        - Name: containerInsights
-          Value: enabled
+      RoleName: !Sub "${AppName}-${Environment}-ecs-infrastructure-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices
       Tags:
         - Key: AppName
           Value: !Ref AppName
@@ -137,127 +113,37 @@ Resources:
           Value: !Ref Environment
 
   # ---------------------------------------------------------------
-  # Task Definition
+  # ECS Express Gateway Service
+  # Automatically provisions: ECS cluster, task definition, service,
+  # ALB, target group, security groups, auto-scaling, CloudWatch logs.
   # ---------------------------------------------------------------
-  TaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Sub "${AppName}-${Environment}"
-      Cpu: !Ref TaskCpu
-      Memory: !Ref TaskMemory
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
-      TaskRoleArn: !GetAtt TaskRole.Arn
-      ContainerDefinitions:
-        - Name: app
-          Image: !Sub
-            - "${Uri}:${Tag}"
-            - Uri:
-                Fn::ImportValue: !Sub "${EcrStackName}-RepositoryUri"
-              Tag: !Ref ImageTag
-          PortMappings:
-            - ContainerPort: !Ref ContainerPort
-              Protocol: tcp
-          Environment:
-            - Name: PORT
-              Value: !Sub "${ContainerPort}"
-            - Name: ENVIRONMENT
-              Value: !Ref Environment
-            - Name: PYTHONDONTWRITEBYTECODE
-              Value: "1"
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref LogGroup
-              awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: ecs
-          Essential: true
-
-  # ---------------------------------------------------------------
-  # Application Load Balancer
-  # ---------------------------------------------------------------
-  ALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: !Sub "${AppName}-${Environment}-alb"
-      Scheme: internet-facing
-      Type: application
-      Subnets:
-        - Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet1Id"
-        - Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnet2Id"
-      SecurityGroups:
-        - Fn::ImportValue: !Sub "${NetworkStackName}-AlbSgId"
-      Tags:
-        - Key: AppName
-          Value: !Ref AppName
-        - Key: Environment
-          Value: !Ref Environment
-
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Sub "${AppName}-${Environment}-tg"
-      Port: !Ref ContainerPort
-      Protocol: HTTP
-      TargetType: ip
-      VpcId:
-        Fn::ImportValue: !Sub "${NetworkStackName}-VpcId"
-      HealthCheckPath: /health
-      HealthCheckIntervalSeconds: 15
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 3
-      Matcher:
-        HttpCode: "200"
-      Tags:
-        - Key: AppName
-          Value: !Ref AppName
-        - Key: Environment
-          Value: !Ref Environment
-
-  Listener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Condition: HttpListenerEnabled
-    Properties:
-      LoadBalancerArn: !Ref ALB
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref TargetGroup
-
-  # ---------------------------------------------------------------
-  # ECS Service
-  # ---------------------------------------------------------------
-  Service:
-    Type: AWS::ECS::Service
-    DependsOn: TargetGroup
+  ExpressService:
+    Type: AWS::ECS::ExpressGatewayService
     Properties:
       ServiceName: !Sub "${AppName}-${Environment}"
-      Cluster: !Ref Cluster
-      TaskDefinition: !Ref TaskDefinition
-      DesiredCount: !Ref DesiredCount
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
-          Subnets:
-            - Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnet1Id"
-            - Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnet2Id"
-          SecurityGroups:
-            - Fn::ImportValue: !Sub "${NetworkStackName}-EcsSgId"
-      LoadBalancers:
-        - ContainerName: app
-          ContainerPort: !Ref ContainerPort
-          TargetGroupArn: !Ref TargetGroup
-      DeploymentConfiguration:
-        MinimumHealthyPercent: 0
-        MaximumPercent: 200
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      InfrastructureRoleArn: !GetAtt InfrastructureRole.Arn
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      HealthCheckPath: /health
+      PrimaryContainer:
+        Image: !Sub
+          - "${Uri}:${Tag}"
+          - Uri:
+              Fn::ImportValue: !Sub "${EcrStackName}-RepositoryUri"
+            Tag: !Ref ImageTag
+        ContainerPort: !Ref ContainerPort
+        Environment:
+          - Name: PORT
+            Value: !Sub "${ContainerPort}"
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: PYTHONDONTWRITEBYTECODE
+            Value: "1"
+      ScalingTarget:
+        MinCount: !Ref MinCount
+        MaxCount: !Ref MaxCount
       Tags:
         - Key: AppName
           Value: !Ref AppName
@@ -265,32 +151,30 @@ Resources:
           Value: !Ref Environment
 
 Outputs:
-  ClusterName:
-    Value: !Ref Cluster
+  ServiceArn:
+    Value: !GetAtt ExpressService.ServiceArn
     Export:
-      Name: !Sub "${AWS::StackName}-ClusterName"
-
-  ServiceName:
-    Value: !GetAtt Service.Name
-    Export:
-      Name: !Sub "${AWS::StackName}-ServiceName"
-
-  AlbDnsName:
-    Value: !GetAtt ALB.DNSName
-    Export:
-      Name: !Sub "${AWS::StackName}-AlbDnsName"
+      Name: !Sub "${AWS::StackName}-ServiceArn"
 
   AlbArn:
-    Value: !Ref ALB
+    Value: !GetAtt ExpressService.ECSManagedResourceArns.IngressPath.LoadBalancerArn
     Export:
       Name: !Sub "${AWS::StackName}-AlbArn"
 
+  AlbDnsName:
+    Value: !GetAtt ExpressService.Endpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDnsName"
+
   TargetGroupArn:
-    Value: !Ref TargetGroup
+    # First target group in the managed list
+    Value: !Select
+      - 0
+      - !GetAtt ExpressService.ECSManagedResourceArns.IngressPath.TargetGroupArns
     Export:
       Name: !Sub "${AWS::StackName}-TargetGroupArn"
 
-  TaskDefinitionArn:
-    Value: !Ref TaskDefinition
+  ListenerArn:
+    Value: !GetAtt ExpressService.ECSManagedResourceArns.IngressPath.ListenerArn
     Export:
-      Name: !Sub "${AWS::StackName}-TaskDefinitionArn"
+      Name: !Sub "${AWS::StackName}-ListenerArn"

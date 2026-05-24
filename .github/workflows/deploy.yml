@@ -99,19 +99,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # ---- Deploy Network stack (idempotent) ---------------------------
-      - name: Deploy Network stack
-        run: |
-          aws cloudformation deploy \
-            --template-file cf/network.yml \
-            --stack-name "${APP_NAME}-network-${ENVIRONMENT}" \
-            --parameter-overrides \
-                "AppName=${APP_NAME}" \
-                "Environment=${ENVIRONMENT}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --region "${AWS_REGION}" \
-            --no-fail-on-empty-changeset
-
       # ---- Deploy ECR stack (idempotent — creates repo on first run) ----
       - name: Deploy ECR stack
         run: |
@@ -150,8 +137,7 @@ jobs:
           docker push "${ECR_URI}:${IMAGE_TAG}"
           docker push "${ECR_URI}:latest"
 
-      # ---- Update ECS CloudFormation stack (registers new task def) ----
-      # CreateHttpListener=false — the DNS stack owns port 80 (redirect) and 443
+      # ---- Deploy ECS Express stack (auto-provisions ALB, SGs, scaling) ----
       - name: Deploy ECS CloudFormation stack
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -162,10 +148,8 @@ jobs:
             --parameter-overrides \
                 "AppName=${APP_NAME}" \
                 "Environment=${ENVIRONMENT}" \
-                "NetworkStackName=${APP_NAME}-network-${ENVIRONMENT}" \
                 "EcrStackName=${APP_NAME}-ecr" \
                 "ImageTag=${IMAGE_TAG}" \
-                "CreateHttpListener=false" \
             --capabilities CAPABILITY_NAMED_IAM \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
@@ -185,34 +169,6 @@ jobs:
             --capabilities CAPABILITY_IAM \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
-
-      # ---- Force new deployment & wait for stability -------------------
-      - name: Force new ECS deployment
-        run: |
-          CLUSTER=$(aws cloudformation describe-stacks \
-            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
-            --region "${AWS_REGION}" \
-            --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' \
-            --output text)
-
-          SERVICE=$(aws cloudformation describe-stacks \
-            --stack-name "${APP_NAME}-ecs-${ENVIRONMENT}" \
-            --region "${AWS_REGION}" \
-            --query 'Stacks[0].Outputs[?OutputKey==`ServiceName`].OutputValue' \
-            --output text)
-
-          aws ecs update-service \
-            --cluster "${CLUSTER}" \
-            --service "${SERVICE}" \
-            --force-new-deployment \
-            --region "${AWS_REGION}" \
-            --output text > /dev/null
-
-          echo "Waiting for service to stabilise…"
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --region "${AWS_REGION}"
 
       # ---- Smoke test (uses HTTPS URL from DNS stack) -------------------
       - name: Smoke test

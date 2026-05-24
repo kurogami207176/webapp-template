@@ -1,8 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  ACM certificate, DNS validation records, and Route53 alias for
-  <AppName>.apps.<domain> → ALB.
+  Route53 alias record pointing <AppName>.apps.<domain> → the ALB
+  managed by the ECS Express Gateway service.
   Deploy this AFTER the ECS stack so the ALB DNS name is available.
+  NOTE: ECS Express Mode auto-provisions ACM certs and HTTPS for its
+  own managed endpoint. This stack only wires up your custom subdomain.
 
 Parameters:
   AppName:
@@ -40,59 +42,8 @@ Parameters:
 
 Resources:
   # ---------------------------------------------------------------
-  # ACM certificate (wildcard covers all apps under apps.<domain>)
-  # ---------------------------------------------------------------
-  Certificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Sub "*.${AppsSubdomain}.${DomainNameSsmPath}"
-          HostedZoneId: !Ref HostedZoneIdSsmPath
-      Tags:
-        - Key: AppName
-          Value: !Ref AppName
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: ManagedBy
-          Value: CloudFormation
-
-  # ---------------------------------------------------------------
-  # HTTPS listener on the ALB (port 443)
-  # ---------------------------------------------------------------
-  HttpsListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn:
-        Fn::ImportValue: !Sub "${EcsStackName}-AlbArn"
-      Port: 443
-      Protocol: HTTPS
-      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
-      Certificates:
-        - CertificateArn: !Ref Certificate
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn:
-            Fn::ImportValue: !Sub "${EcsStackName}-TargetGroupArn"
-
-  # HTTP → HTTPS redirect on port 80
-  HttpRedirectListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn:
-        Fn::ImportValue: !Sub "${EcsStackName}-AlbArn"
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        - Type: redirect
-          RedirectConfig:
-            Protocol: HTTPS
-            Port: "443"
-            StatusCode: HTTP_301
-
-  # ---------------------------------------------------------------
   # Route53 alias: <AppName>.<AppsSubdomain>.<domain> → ALB
+  # ECS Express Mode manages the ALB, HTTPS listener, and ACM cert.
   # ---------------------------------------------------------------
   DnsRecord:
     Type: AWS::Route53::RecordSet
@@ -138,12 +89,26 @@ Resources:
       Timeout: 30
       Code:
         ZipFile: |
-          import boto3, cfnresponse
+          import json, urllib.request, boto3
+
+          def send(event, context, status, data={}):
+            body = json.dumps({
+              'Status': status,
+              'Reason': data.get('Error', 'See CloudWatch'),
+              'PhysicalResourceId': event.get('PhysicalResourceId', context.log_stream_name),
+              'StackId': event['StackId'],
+              'RequestId': event['RequestId'],
+              'LogicalResourceId': event['LogicalResourceId'],
+              'Data': data,
+            }).encode()
+            req = urllib.request.Request(event['ResponseURL'], data=body,
+              headers={'Content-Type': '', 'Content-Length': len(body)}, method='PUT')
+            urllib.request.urlopen(req)
 
           def handler(event, context):
             try:
               if event['RequestType'] == 'Delete':
-                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                send(event, context, 'SUCCESS')
                 return
               alb_dns = event['ResourceProperties']['AlbDnsName']
               region  = event['ResourceProperties']['Region']
@@ -152,12 +117,11 @@ Resources:
               for page in paginator.paginate():
                 for lb in page['LoadBalancers']:
                   if lb['DNSName'].lower() == alb_dns.lower():
-                    cfnresponse.send(event, context, cfnresponse.SUCCESS,
-                      {'HostedZoneId': lb['CanonicalHostedZoneId']})
+                    send(event, context, 'SUCCESS', {'HostedZoneId': lb['CanonicalHostedZoneId']})
                     return
-              raise Exception(f'ALB not found for DNS name: {alb_dns}')
+              send(event, context, 'FAILED', {'Error': f'ALB not found for DNS name: {alb_dns}'})
             except Exception as e:
-              cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+              send(event, context, 'FAILED', {'Error': str(e)})
 
   AlbHostedZoneLookup:
     Type: AWS::CloudFormation::CustomResource
@@ -169,13 +133,7 @@ Resources:
 
 Outputs:
   AppUrl:
-    Description: HTTPS URL for this app
+    Description: HTTPS URL for this app (custom subdomain)
     Value: !Sub "https://${AppName}.${AppsSubdomain}.${DomainNameSsmPath}"
     Export:
       Name: !Sub "${AWS::StackName}-AppUrl"
-
-  CertificateArn:
-    Description: ARN of the ACM wildcard certificate
-    Value: !Ref Certificate
-    Export:
-      Name: !Sub "${AWS::StackName}-CertificateArn"

@@ -1,69 +1,55 @@
 # CloudFormation Templates
 
-Infrastructure-as-Code for the webapp-template ECS deployment.
+Infrastructure-as-Code for the webapp-template ECS Express deployment.
 
 ## Architecture
 
 ```
 Internet
    │
-  ALB (public subnets, port 80)
+  ALB  ◄── auto-managed by ECS Express Mode
    │
-  ECS Fargate Service (private subnets, port 3000)
+  ECS Fargate Tasks (auto-managed VPC + security groups)
    │
   ECR (Docker image registry)
 ```
+
+ECS Express Mode (`AWS::ECS::ExpressGatewayService`) automatically provisions
+the ECS cluster, task definition, service, ALB, target groups, security groups,
+auto-scaling policies, and CloudWatch log groups. No separate network stack needed.
 
 ## Stacks
 
 | File | Stack name | Purpose |
 |------|-----------|---------|
-| `ecr.yml` | `webapp-template-ecr` | ECR repository |
-| `network.yml` | `webapp-template-network-<env>` | VPC, subnets, security groups |
-| `ecs.yml` | `webapp-template-ecs-<env>` | ECS cluster, task def, ALB, service |
-| `iam-github-oidc.yml` | `webapp-template-github-oidc` | GitHub Actions deploy role (one-time) |
+| `ecr.yml` | `<app>-ecr` | ECR repository |
+| `ecs.yml` | `<app>-ecs-<env>` | ECS Express service (auto-provisions ALB + networking) |
+| `dns.yml` | `<app>-dns-<env>` | Route53 alias → ALB (optional, for custom domain) |
+| `iam-github-oidc.yml` | `<app>-github-oidc` | GitHub Actions deploy role (one-time) |
+
+`network.yml` is retained for reference but is no longer deployed — ECS Express
+Mode manages its own VPC resources.
 
 ## First-time setup
 
-### 1. Deploy infrastructure
-
 ```bash
-# Deploys ECR → Network → ECS in one shot
-./bin/deploy-infra.sh --env production --region us-east-1
+# Deploys ECR → ECS Express (→ optional DNS) in one shot
+./bin/deploy-infra.sh --env production --region ap-southeast-2
+
+# Skip the DNS/Route53 stack if you don't have a custom domain yet
+./bin/deploy-infra.sh --env production --skip-dns
 ```
-
-### 2. Push your first image
-
-```bash
-./bin/push-image.sh --tag v1.0.0
-```
-
-### 3. Set up GitHub OIDC (for CI/CD)
-
-```bash
-./bin/setup-github-oidc.sh \
-  --github-org  YOUR_ORG \
-  --github-repo webapp-template \
-  --region us-east-1
-```
-
-Copy the printed `AWS_DEPLOY_ROLE_ARN` into your GitHub repository secrets.
-
-Add `AWS_REGION` as a repository variable (e.g. `us-east-1`).
 
 ## Subsequent deploys
 
 ```bash
-# From local machine
+# From local machine — update the image tag in the CF stack
 ./bin/deploy-app.sh --env production --tag v1.2.3
 
 # Or push to main → GitHub Actions handles it automatically
 ```
 
-## Parameters
-
-See `parameters/production.json` and `parameters/staging.json`.
-
 ## Stack outputs
 
-Each stack exports its key resources so dependent stacks can `Fn::ImportValue` them without hardcoding ARNs.
+Each stack exports its key resources so dependent stacks can `Fn::ImportValue`
+them without hardcoding ARNs or account IDs.

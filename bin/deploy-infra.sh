@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # bin/deploy-infra.sh
 # ---------------------------------------------------------------------------
-# Bootstrap all infrastructure stacks (ECR → Network → ECS).
+# Bootstrap all infrastructure stacks (ECR → ECS Express → DNS).
 # Run this once to provision; afterwards use bin/deploy-app.sh to release.
+#
+# ECS Express Mode auto-provisions the ALB, target group, security groups,
+# auto-scaling, and CloudWatch logs — no separate network stack required.
 #
 # Usage:
 #   ./bin/deploy-infra.sh [--env staging|production] [--region ap-southeast-2]
@@ -39,7 +42,6 @@ fi
 
 # ---- derived names ----------------------------------------------------------
 ECR_STACK="${APP_NAME}-ecr"
-NETWORK_STACK="${APP_NAME}-network-${ENV}"
 ECS_STACK="${APP_NAME}-ecs-${ENV}"
 DNS_STACK="${APP_NAME}-dns-${ENV}"
 CF_DIR="$(cd "$(dirname "$0")/../cf" && pwd)"
@@ -59,7 +61,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # ---- validate templates first -----------------------------------------------
 echo ""
 echo "▶ Validating CloudFormation templates…"
-TEMPLATES_TO_VALIDATE="ecr.yml network.yml ecs.yml"
+TEMPLATES_TO_VALIDATE="ecr.yml ecs.yml"
 [[ "${SKIP_DNS}" == "false" ]] && TEMPLATES_TO_VALIDATE="${TEMPLATES_TO_VALIDATE} dns.yml"
 for tpl in ${TEMPLATES_TO_VALIDATE}; do
   echo "  → ${tpl}"
@@ -72,7 +74,7 @@ echo "  ✓ All templates valid"
 
 # ---- 1. ECR -----------------------------------------------------------------
 echo ""
-echo "▶ Stack 1/3 — ECR (${ECR_STACK})"
+echo "▶ Stack 1/2 — ECR (${ECR_STACK})"
 aws cloudformation deploy \
   --template-file "${CF_DIR}/ecr.yml" \
   --stack-name "${ECR_STACK}" \
@@ -91,39 +93,24 @@ ECR_URI=$(aws cloudformation describe-stacks \
   --output text)
 echo "  ✓ ECR URI: ${ECR_URI}"
 
-# ---- 2. Network -------------------------------------------------------------
+# ---- 2. ECS (Express Mode) --------------------------------------------------
 echo ""
-echo "▶ Stack 2/3 — Network (${NETWORK_STACK})"
-aws cloudformation deploy \
-  --template-file "${CF_DIR}/network.yml" \
-  --stack-name "${NETWORK_STACK}" \
-  --parameter-overrides \
-      "AppName=${APP_NAME}" \
-      "Environment=${ENV}" \
-  --tags ${CF_TAGS} \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --region "${REGION}" \
-  --no-fail-on-empty-changeset
-echo "  ✓ Network stack deployed"
-
-# ---- 3. ECS -----------------------------------------------------------------
-echo ""
-echo "▶ Stack 3/3 — ECS (${ECS_STACK})"
+echo "▶ Stack 2/2 — ECS Express (${ECS_STACK})"
+echo "  ECS Express Mode will auto-provision the ALB, security groups,"
+echo "  auto-scaling, and CloudWatch logs. This may take a few minutes…"
 aws cloudformation deploy \
   --template-file "${CF_DIR}/ecs.yml" \
   --stack-name "${ECS_STACK}" \
   --parameter-overrides \
       "AppName=${APP_NAME}" \
       "Environment=${ENV}" \
-      "NetworkStackName=${NETWORK_STACK}" \
       "EcrStackName=${ECR_STACK}" \
       "ImageTag=latest" \
-      "CreateHttpListener=$([ "${SKIP_DNS}" == "true" ] && echo true || echo false)" \
   --tags ${CF_TAGS} \
   --capabilities CAPABILITY_NAMED_IAM \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
-echo "  ✓ ECS stack deployed"
+echo "  ✓ ECS Express stack deployed"
 
 ALB_DNS=$(aws cloudformation describe-stacks \
   --stack-name "${ECS_STACK}" \
@@ -131,12 +118,11 @@ ALB_DNS=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`AlbDnsName`].OutputValue' \
   --output text)
 
-# ---- 4. DNS (optional) ------------------------------------------------------
+# ---- 3. DNS (optional) ------------------------------------------------------
 APP_URL="http://${ALB_DNS}"
 if [[ "${SKIP_DNS}" == "false" ]]; then
   echo ""
-  echo "▶ Stack 4/4 — DNS + TLS (${DNS_STACK})"
-  echo "  Note: ACM certificate validation can take 2–5 minutes…"
+  echo "▶ Stack 3/3 — DNS (${DNS_STACK})"
   aws cloudformation deploy \
     --template-file "${CF_DIR}/dns.yml" \
     --stack-name "${DNS_STACK}" \

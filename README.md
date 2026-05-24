@@ -6,9 +6,9 @@ A template for shipping a Python Flask API to AWS. Clone it, rename things, and 
 
 - **Flask API** — Python 3.12 + Gunicorn, with health check, hello, and 404 handlers out of the box
 - **Docker** — multi-stage build, non-root user, production-ready image
-- **AWS infrastructure as code** — four CloudFormation stacks: ECR repository, VPC/networking, ECS Fargate cluster + ALB, and an optional GitHub OIDC role
+- **AWS infrastructure as code** — CloudFormation using ECS Express Mode: ECR repository, ECS Express service (auto-provisions ALB + networking), optional Route53 DNS, and an optional GitHub OIDC role
 - **Deployment scripts** — `bin/` scripts to bootstrap infrastructure, build and push images, deploy, and smoke-test from your local machine
-- **GitHub Actions pipeline** — runs tests, builds and pushes the Docker image to ECR, deploys the CloudFormation stack, forces a new ECS deployment, and runs a smoke test against the live URL
+- **GitHub Actions pipeline** — runs tests, builds and pushes the Docker image to ECR, deploys the CloudFormation stack (Express Mode rolls out the new image automatically), and runs a smoke test against the live URL
 - **Smoke tests** — `bin/smoke-test.sh` hits every endpoint and asserts the response body; runs in CI after every deploy and locally on demand
 
 ## Stack
@@ -20,7 +20,7 @@ A template for shipping a Python Flask API to AWS. Clone it, rename things, and 
 | Registry | Amazon ECR |
 | Compute | Amazon ECS Fargate |
 | Load balancer | Application Load Balancer |
-| Networking | VPC with public + private subnets, NAT gateway |
+| Networking | ECS Express Mode (auto-managed VPC, ALB, security groups) |
 | IaC | AWS CloudFormation |
 | CI/CD | GitHub Actions |
 | Tests | pytest + smoke-test.sh |
@@ -86,9 +86,10 @@ pytest tests/ -v
 │   └── setup-github-oidc.sh
 ├── cf/                     # CloudFormation templates
 │   ├── ecr.yml             # ECR repository
-│   ├── network.yml         # VPC, subnets, security groups
-│   ├── ecs.yml             # ECS Fargate cluster, ALB, service
+│   ├── ecs.yml             # ECS Express service (auto-provisions ALB + networking)
+│   ├── dns.yml             # Route53 alias → ALB (optional, custom domain)
 │   ├── iam-github-oidc.yml # GitHub Actions deploy role (optional)
+│   ├── network.yml         # Legacy VPC template (not deployed; kept for reference)
 │   ├── tags.json           # Tags applied to all stacks
 │   └── parameters/
 └── .github/workflows/
@@ -100,7 +101,7 @@ pytest tests/ -v
 ### First-time setup
 
 ```bash
-# Deploy ECR, networking, and ECS stacks
+# Deploy ECR and ECS Express stacks (networking is auto-managed)
 ./bin/deploy-infra.sh --env production
 
 # Build and push the first image
