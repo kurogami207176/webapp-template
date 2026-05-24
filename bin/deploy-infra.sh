@@ -131,7 +131,6 @@ if [[ "${SKIP_DNS}" == "false" ]]; then
         "Environment=${ENV}" \
         "EcsStackName=${ECS_STACK}" \
     --tags ${CF_TAGS} \
-    --capabilities CAPABILITY_IAM \
     --region "${REGION}" \
     --no-fail-on-empty-changeset
 

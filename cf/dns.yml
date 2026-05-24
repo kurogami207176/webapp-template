@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Route53 alias record pointing <AppName>.apps.<domain> → the ALB
-  managed by the ECS Express Gateway service.
-  Deploy this AFTER the ECS stack so the ALB DNS name is available.
-  NOTE: ECS Express Mode auto-provisions ACM certs and HTTPS for its
-  own managed endpoint. This stack only wires up your custom subdomain.
+  Route53 CNAME record pointing <AppName>.<AppsSubdomain>.<domain> → the
+  ECS Express Mode endpoint.
+  Deploy this AFTER the ECS stack so the endpoint is available.
+  NOTE: ECS Express Mode uses its own managed domain (not a standard ALB),
+  so we use a CNAME rather than an alias record.
 
 Parameters:
   AppName:
@@ -42,94 +42,20 @@ Parameters:
 
 Resources:
   # ---------------------------------------------------------------
-  # Route53 alias: <AppName>.<AppsSubdomain>.<domain> → ALB
-  # ECS Express Mode manages the ALB, HTTPS listener, and ACM cert.
+  # CNAME: <AppName>.<AppsSubdomain>.<domain> → ECS Express endpoint
+  # An alias record cannot be used because the Express endpoint
+  # (*.ecs.<region>.on.aws) is not a standard ALB — it has no
+  # canonical hosted zone ID exposed to CloudFormation.
   # ---------------------------------------------------------------
   DnsRecord:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneIdSsmPath
       Name: !Sub "${AppName}.${AppsSubdomain}.${DomainNameSsmPath}."
-      Type: A
-      AliasTarget:
-        DNSName:
-          Fn::ImportValue: !Sub "${EcsStackName}-AlbDnsName"
-        EvaluateTargetHealth: true
-        HostedZoneId: !GetAtt AlbHostedZoneLookup.HostedZoneId
-
-  # Custom resource to look up the ALB's hosted zone ID
-  # (needed for the Route53 alias — it's different from the Route53 hosted zone)
-  AlbHostedZoneLookupRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: DescribeLoadBalancers
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: elasticloadbalancing:DescribeLoadBalancers
-                Resource: "*"
-
-  AlbHostedZoneLookupFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      Runtime: python3.12
-      Handler: index.handler
-      Role: !GetAtt AlbHostedZoneLookupRole.Arn
-      Timeout: 30
-      Code:
-        ZipFile: |
-          import json, urllib.request, boto3
-
-          def send(event, context, status, data={}):
-            body = json.dumps({
-              'Status': status,
-              'Reason': data.get('Error', 'See CloudWatch'),
-              'PhysicalResourceId': event.get('PhysicalResourceId', context.log_stream_name),
-              'StackId': event['StackId'],
-              'RequestId': event['RequestId'],
-              'LogicalResourceId': event['LogicalResourceId'],
-              'Data': data,
-            }).encode()
-            req = urllib.request.Request(event['ResponseURL'], data=body,
-              headers={'Content-Type': '', 'Content-Length': len(body)}, method='PUT')
-            urllib.request.urlopen(req)
-
-          def handler(event, context):
-            try:
-              if event['RequestType'] == 'Delete':
-                send(event, context, 'SUCCESS')
-                return
-              alb_dns = event['ResourceProperties']['AlbDnsName']
-              region  = event['ResourceProperties']['Region']
-              elb = boto3.client('elbv2', region_name=region)
-              paginator = elb.get_paginator('describe_load_balancers')
-              for page in paginator.paginate():
-                for lb in page['LoadBalancers']:
-                  if lb['DNSName'].lower() == alb_dns.lower():
-                    send(event, context, 'SUCCESS', {'HostedZoneId': lb['CanonicalHostedZoneId']})
-                    return
-              send(event, context, 'FAILED', {'Error': f'ALB not found for DNS name: {alb_dns}'})
-            except Exception as e:
-              send(event, context, 'FAILED', {'Error': str(e)})
-
-  AlbHostedZoneLookup:
-    Type: AWS::CloudFormation::CustomResource
-    Properties:
-      ServiceToken: !GetAtt AlbHostedZoneLookupFunction.Arn
-      AlbDnsName:
-        Fn::ImportValue: !Sub "${EcsStackName}-AlbDnsName"
-      Region: !Ref AWS::Region
+      Type: CNAME
+      TTL: "300"
+      ResourceRecords:
+        - Fn::ImportValue: !Sub "${EcsStackName}-AlbDnsName"
 
 Outputs:
   AppUrl:

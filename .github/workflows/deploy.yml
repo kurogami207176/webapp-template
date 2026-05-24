@@ -166,7 +166,6 @@ jobs:
                 "Environment=${ENVIRONMENT}" \
                 "EcsStackName=${APP_NAME}-ecs-${ENVIRONMENT}" \
             --tags ${CF_TAGS} \
-            --capabilities CAPABILITY_IAM \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
 
