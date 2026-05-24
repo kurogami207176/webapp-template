@@ -15,8 +15,8 @@ ENV="production"
 REGION="ap-southeast-2"
 APP_NAME=""
 BASE_URL=""
-RETRIES=12
-RETRY_INTERVAL=5
+RETRIES=18
+RETRY_INTERVAL=10
 
 while [[ $# -gt 0 ]]; do
   case $1 in

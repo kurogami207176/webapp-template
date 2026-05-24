@@ -169,6 +169,33 @@ jobs:
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
 
+      # ---- Wait for DNS to propagate (CNAME TTL is 300s) -----------------
+      - name: Wait for DNS propagation
+        run: |
+          APP_URL=$(aws cloudformation describe-stacks \
+            --stack-name "${APP_NAME}-dns-${ENVIRONMENT}" \
+            --region "${AWS_REGION}" \
+            --query 'Stacks[0].Outputs[?OutputKey==`AppUrl`].OutputValue' \
+            --output text 2>/dev/null || true)
+
+          if [[ -z "${APP_URL}" ]]; then
+            echo "No DNS stack deployed — skipping DNS wait."
+            exit 0
+          fi
+
+          # Extract hostname from the URL (strip https://)
+          HOST="${APP_URL#https://}"
+          echo "▶ Waiting for CNAME ${HOST} to resolve (up to 5 min)…"
+          for i in $(seq 1 30); do
+            if dig +short "${HOST}" | grep -q '.'; then
+              echo "  ✓ DNS resolved after $((i * 10))s"
+              exit 0
+            fi
+            echo "  attempt ${i}/30 — not yet resolved, retrying in 10s…"
+            sleep 10
+          done
+          echo "  ⚠ DNS did not resolve within 5 minutes — proceeding anyway (may fail)"
+
       # ---- Smoke test (uses HTTPS URL from DNS stack) -------------------
       - name: Smoke test
         run: |
