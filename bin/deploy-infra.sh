@@ -107,7 +107,7 @@ aws cloudformation deploy \
       "EcrStackName=${ECR_STACK}" \
       "ImageTag=latest" \
   --tags ${CF_TAGS} \
-  --capabilities CAPABILITY_NAMED_IAM \
+  --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
 echo "  ✓ ECS Express stack deployed"

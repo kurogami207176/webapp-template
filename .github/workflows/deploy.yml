@@ -150,7 +150,7 @@ jobs:
                 "Environment=${ENVIRONMENT}" \
                 "EcrStackName=${APP_NAME}-ecr" \
                 "ImageTag=${IMAGE_TAG}" \
-            --capabilities CAPABILITY_NAMED_IAM \
+            --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
             --region "${AWS_REGION}" \
             --no-fail-on-empty-changeset
 
